@@ -54,9 +54,9 @@ func TestAdd(t *testing.T) {
 			id, err := s.Add(tt.links)
 			if tt.wantError {
 				if err == nil {
-					t.Error("Add() error = nil, want ErrEmptyLinks")
-				} else if !errors.Is(err, ErrEmptyLinks) {
-					t.Errorf("Add() error = %v, want ErrEmptyLinks", err)
+					t.Error("Add() error = nil, want ErrEmptyInpData")
+				} else if !errors.Is(err, ErrEmptyInpData) {
+					t.Errorf("Add() error = %v, want ErrEmptyInpData", err)
 				}
 				return
 			}

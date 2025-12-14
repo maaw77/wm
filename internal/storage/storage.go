@@ -8,8 +8,8 @@ import (
 )
 
 var (
-	ErrNotExist   = errors.New("it doesn't exist")
-	ErrEmptyLinks = errors.New("links list is empty or nil")
+	ErrNotExist     = errors.New("it doesn't exist")
+	ErrEmptyInpData = errors.New("input data is empty or nil")
 )
 
 type LinkStatus struct {
@@ -20,7 +20,7 @@ type LinkStatus struct {
 // Storage определяет интерфейс для хранения и управления задачами проверки ссылок.
 type Storage interface {
 	// Add создает новую задачу с указанными ссылками и возвращает присвоенный ID.
-	// Возвращает ErrEmptyLinks, если links пустой или nil.
+	// Возвращает ErrEmptyInpData, если links пустой или nil.
 	Add(links []string) (uint64, error)
 	// Get возвращает задачу по указанному ID. Возвращает ErrNotExist, если задача не найдена.
 	Get(id uint64) (LinkStatus, error)
@@ -39,10 +39,10 @@ type StorageLinkStatus struct {
 }
 
 // Add создает новую задачу с указанными ссылками и возвращает присвоенный ID.
-// Возвращает ErrEmptyLinks, если links пустой или nil.
+// Возвращает ErrEmptyInpData, если links пустой или nil.
 func (s *StorageLinkStatus) Add(links []string) (uint64, error) {
 	if len(links) == 0 {
-		return 0, ErrEmptyLinks
+		return 0, ErrEmptyInpData
 	}
 
 	s.mu.Lock()
