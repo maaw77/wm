@@ -22,32 +22,48 @@ func TestAdd(t *testing.T) {
 		name       string
 		links      []string
 		expectedID uint64
+		wantError  bool
 	}{
 		{
 			name:       "добавление задачи 1",
 			links:      []string{"google.com", "yandex.ru"},
 			expectedID: 1,
+			wantError:  false,
 		},
 		{
 			name:       "добавление задачи 2",
 			links:      []string{"github.com"},
 			expectedID: 2,
+			wantError:  false,
 		},
 		{
-			name:       "пустой список задач",
-			links:      []string{},
-			expectedID: 3,
+			name:      "пустой список задач",
+			links:     []string{},
+			wantError: true,
 		},
 		{
-			name:       "с nil",
-			links:      nil,
-			expectedID: 4,
+			name:      "с nil",
+			links:     nil,
+			wantError: true,
 		},
 	}
 
+	successCount := 0
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			id := s.Add(tt.links)
+			id, err := s.Add(tt.links)
+			if tt.wantError {
+				if err == nil {
+					t.Error("Add() error = nil, want ErrEmptyLinks")
+				} else if !errors.Is(err, ErrEmptyLinks) {
+					t.Errorf("Add() error = %v, want ErrEmptyLinks", err)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Add() error = %v, want nil", err)
+			}
 			if id != tt.expectedID {
 				t.Errorf("Expected ID %d, got %d", tt.expectedID, id)
 			}
@@ -65,12 +81,13 @@ func TestAdd(t *testing.T) {
 			if task.Status != "" {
 				t.Errorf("Expected empty status, got %s", task.Status)
 			}
+			successCount++
 		})
 	}
 
 	// Проверяем общее количество задач
-	if len(storage.Links) != len(tests) {
-		t.Errorf("Expected %d tasks, got %d", len(tests), len(storage.Links))
+	if len(storage.Links) != successCount {
+		t.Errorf("Expected %d tasks, got %d", successCount, len(storage.Links))
 	}
 }
 
@@ -83,9 +100,18 @@ func TestGet(t *testing.T) {
 	links2 := []string{"yandex.ru", "github.com"}
 	links3 := []string{"example.com"}
 
-	id1 := s.Add(links1)
-	id2 := s.Add(links2)
-	id3 := s.Add(links3)
+	id1, err := s.Add(links1)
+	if err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+	id2, err := s.Add(links2)
+	if err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+	id3, err := s.Add(links3)
+	if err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
 
 	tests := []struct {
 		name      string
@@ -139,7 +165,10 @@ func TestGetInvalidID(t *testing.T) {
 	s := NewStorage()
 
 	// Добавляем одну задачу для проверки
-	s.Add([]string{"google.com"})
+	_, err := s.Add([]string{"google.com"})
+	if err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
 
 	tests := []struct {
 		name      string
@@ -204,9 +233,18 @@ func TestGetAll(t *testing.T) {
 	links2 := []string{"yandex.ru"}
 	links3 := []string{"github.com"}
 
-	id1 := s.Add(links1)
-	id2 := s.Add(links2)
-	id3 := s.Add(links3)
+	id1, err := s.Add(links1)
+	if err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+	id2, err := s.Add(links2)
+	if err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+	id3, err := s.Add(links3)
+	if err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
 
 	t.Run("итерация по всем задачам", func(t *testing.T) {
 		collected := make(map[uint64]LinkStatus)
@@ -277,8 +315,14 @@ func TestDump(t *testing.T) {
 	links1 := []string{"google.com", "yandex.ru"}
 	links2 := []string{"github.com"}
 
-	id1 := s.Add(links1)
-	s.Add(links2)
+	id1, err := s.Add(links1)
+	if err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+	_, err = s.Add(links2)
+	if err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
 
 	// Устанавливаем статус для первой задачи
 	storage.Links[id1-1].Status = "available"
@@ -430,8 +474,14 @@ func TestDumpAndUpload(t *testing.T) {
 	links1 := []string{"google.com", "yandex.ru"}
 	links2 := []string{"github.com"}
 
-	id1 := s1.Add(links1)
-	id2 := s1.Add(links2)
+	id1, err := s1.Add(links1)
+	if err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+	id2, err := s1.Add(links2)
+	if err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
 
 	// Устанавливаем статусы
 	storage1 := getStorageLinkStatus(s1)
