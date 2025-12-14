@@ -1,7 +1,9 @@
 package storage
 
 import (
+	"encoding/json"
 	"errors"
+	"os"
 	"sync"
 )
 
@@ -22,6 +24,10 @@ type Storage interface {
 	Get(id uint64) (LinkStatus, error)
 	// GetAll итерируется по всем задачам и вызывает функцию fn для каждой пары (id, LinkStatus).
 	GetAll(fn func(id uint64, links LinkStatus) bool)
+	// Dump сохраняет все задачи в файл links.json в формате JSON.
+	Dump(filename string) error
+	// Upload загружает задачи из файла links.json в формате JSON.
+	Upload(filename string) error
 }
 
 type StorageLinkStatus struct {
@@ -72,6 +78,74 @@ func (s *StorageLinkStatus) GetAll(fn func(id uint64, links LinkStatus) bool) {
 			break
 		}
 	}
+}
+
+// taskWithID представляет задачу с ID для сериализации в JSON.
+type taskWithID struct {
+	ID     uint64   `json:"id"`
+	URLs   []string `json:"urls"`
+	Status string   `json:"status"`
+}
+
+// storageData представляет структуру данных для сохранения в JSON.
+type storageData struct {
+	NextID      uint64       `json:"next_id"`
+	LinkEntries []taskWithID `json:"link_entries"`
+}
+
+// Dump сохраняет все задачи в файл links.json в формате JSON.
+func (s *StorageLinkStatus) Dump(filename string) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	data := storageData{
+		NextID:      s.nextID,
+		LinkEntries: make([]taskWithID, 0, len(s.Links)),
+	}
+
+	for i, linkStatus := range s.Links {
+		id := uint64(i + 1)
+		data.LinkEntries = append(data.LinkEntries, taskWithID{
+			ID:     id,
+			URLs:   linkStatus.URLs,
+			Status: linkStatus.Status,
+		})
+	}
+
+	jsonData, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(filename, jsonData, 0644)
+}
+
+// Upload загружает задачи из файла links.json в формате JSON.
+func (s *StorageLinkStatus) Upload(filename string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	jsonData, err := os.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+
+	var data storageData
+	if err := json.Unmarshal(jsonData, &data); err != nil {
+		return err
+	}
+
+	s.nextID = data.NextID
+	s.Links = make([]LinkStatus, 0, len(data.LinkEntries))
+
+	for _, task := range data.LinkEntries {
+		s.Links = append(s.Links, LinkStatus{
+			URLs:   task.URLs,
+			Status: task.Status,
+		})
+	}
+
+	return nil
 }
 
 // NewStorage создает и возвращает новый экземпляр хранилища задач.
