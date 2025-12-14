@@ -35,7 +35,7 @@ type Storage interface {
 type StorageLinkStatus struct {
 	mu     sync.RWMutex
 	nextID uint64
-	Links  []LinkStatus
+	links  []LinkStatus
 }
 
 // Add создает новую задачу с указанными ссылками и возвращает присвоенный ID.
@@ -56,7 +56,7 @@ func (s *StorageLinkStatus) Add(links []string) (uint64, error) {
 		Status: "", // статус будет установлен позже при обработке
 	}
 
-	s.Links = append(s.Links, task)
+	s.links = append(s.links, task)
 	return id, nil
 }
 
@@ -65,13 +65,13 @@ func (s *StorageLinkStatus) Get(id uint64) (LinkStatus, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if id == 0 || id > uint64(len(s.Links)) {
+	if id == 0 || id > uint64(len(s.links)) {
 		return LinkStatus{}, ErrNotExist
 	}
 
 	// ID начинается с 1, индекс массива с 0
 	index := id - 1
-	return s.Links[index], nil
+	return s.links[index], nil
 }
 
 // GetAll итерируется по всем задачам и вызывает функцию fn для каждой пары (id, LinkStatus).
@@ -79,7 +79,7 @@ func (s *StorageLinkStatus) GetAll(fn func(id uint64, links LinkStatus) bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	for i, status := range s.Links {
+	for i, status := range s.links {
 		id := uint64(i + 1) // ID начинается с 1
 		if !fn(id, status) {
 			break
@@ -107,10 +107,10 @@ func (s *StorageLinkStatus) Dump(filename string) error {
 
 	data := storageData{
 		NextID:      s.nextID,
-		LinkEntries: make([]taskWithID, 0, len(s.Links)),
+		LinkEntries: make([]taskWithID, 0, len(s.links)),
 	}
 
-	for i, linkStatus := range s.Links {
+	for i, linkStatus := range s.links {
 		id := uint64(i + 1)
 		data.LinkEntries = append(data.LinkEntries, taskWithID{
 			ID:     id,
@@ -143,10 +143,10 @@ func (s *StorageLinkStatus) Upload(filename string) error {
 	}
 
 	s.nextID = data.NextID
-	s.Links = make([]LinkStatus, 0, len(data.LinkEntries))
+	s.links = make([]LinkStatus, 0, len(data.LinkEntries))
 
 	for _, task := range data.LinkEntries {
-		s.Links = append(s.Links, LinkStatus{
+		s.links = append(s.links, LinkStatus{
 			URLs:   task.URLs,
 			Status: task.Status,
 		})
@@ -159,6 +159,6 @@ func (s *StorageLinkStatus) Upload(filename string) error {
 func NewStorage() Storage {
 	return &StorageLinkStatus{
 		nextID: 0,
-		Links:  make([]LinkStatus, 0),
+		links:  make([]LinkStatus, 0),
 	}
 }

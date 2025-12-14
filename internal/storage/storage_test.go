@@ -70,11 +70,11 @@ func TestAdd(t *testing.T) {
 
 			// Проверяем, что задача сохранилась
 			index := id - 1
-			if index >= uint64(len(storage.Links)) {
-				t.Fatalf("Task index %d out of range (len=%d)", index, len(storage.Links))
+			if index >= uint64(len(storage.links)) {
+				t.Fatalf("Task index %d out of range (len=%d)", index, len(storage.links))
 			}
 
-			task := storage.Links[index]
+			task := storage.links[index]
 			if !reflect.DeepEqual(task.URLs, tt.links) {
 				t.Errorf("Expected URLs %v, got %v", tt.links, task.URLs)
 			}
@@ -86,8 +86,8 @@ func TestAdd(t *testing.T) {
 	}
 
 	// Проверяем общее количество задач
-	if len(storage.Links) != successCount {
-		t.Errorf("Expected %d tasks, got %d", successCount, len(storage.Links))
+	if len(storage.links) != successCount {
+		t.Errorf("Expected %d tasks, got %d", successCount, len(storage.links))
 	}
 }
 
@@ -325,7 +325,7 @@ func TestDump(t *testing.T) {
 	}
 
 	// Устанавливаем статус для первой задачи
-	storage.Links[id1-1].Status = "available"
+	storage.links[id1-1].Status = "available"
 
 	// Создаем временный файл
 	tmpFile, err := os.CreateTemp("", "test_dump_*.json")
@@ -430,21 +430,21 @@ func TestUpload(t *testing.T) {
 	}
 
 	// Проверяем количество задач
-	if len(storage.Links) != 2 {
-		t.Fatalf("Expected 2 tasks, got %d", len(storage.Links))
+	if len(storage.links) != 2 {
+		t.Fatalf("Expected 2 tasks, got %d", len(storage.links))
 	}
 
 	// Проверяем первую задачу
-	if !reflect.DeepEqual(storage.Links[0].URLs, testData.LinkEntries[0].URLs) {
-		t.Errorf("Expected URLs %v, got %v", testData.LinkEntries[0].URLs, storage.Links[0].URLs)
+	if !reflect.DeepEqual(storage.links[0].URLs, testData.LinkEntries[0].URLs) {
+		t.Errorf("Expected URLs %v, got %v", testData.LinkEntries[0].URLs, storage.links[0].URLs)
 	}
-	if storage.Links[0].Status != "available" {
-		t.Errorf("Expected status 'available', got %s", storage.Links[0].Status)
+	if storage.links[0].Status != "available" {
+		t.Errorf("Expected status 'available', got %s", storage.links[0].Status)
 	}
 
 	// Проверяем вторую задачу
-	if !reflect.DeepEqual(storage.Links[1].URLs, testData.LinkEntries[1].URLs) {
-		t.Errorf("Expected URLs %v, got %v", testData.LinkEntries[1].URLs, storage.Links[1].URLs)
+	if !reflect.DeepEqual(storage.links[1].URLs, testData.LinkEntries[1].URLs) {
+		t.Errorf("Expected URLs %v, got %v", testData.LinkEntries[1].URLs, storage.links[1].URLs)
 	}
 
 	// Проверяем, что можно получить задачи по ID
@@ -485,8 +485,8 @@ func TestDumpAndUpload(t *testing.T) {
 
 	// Устанавливаем статусы
 	storage1 := getStorageLinkStatus(s1)
-	storage1.Links[id1-1].Status = "available"
-	storage1.Links[id2-1].Status = "not available"
+	storage1.links[id1-1].Status = "available"
+	storage1.links[id2-1].Status = "not available"
 
 	// Сохраняем в файл
 	tmpFile, err := os.CreateTemp("", "test_roundtrip_*.json")
