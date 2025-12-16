@@ -78,9 +78,24 @@ func TestAdd(t *testing.T) {
 			if !reflect.DeepEqual(task.URLs, tt.links) {
 				t.Errorf("Expected URLs %v, got %v", tt.links, task.URLs)
 			}
-			if task.Status != "" {
-				t.Errorf("Expected empty status, got %s", task.Status)
+
+			// Results должен быть инициализирован и содержать все URL с пустыми статусами.
+			if task.Results == nil {
+				t.Fatal("Expected non-nil Results map")
 			}
+			if len(task.Results) != len(tt.links) {
+				t.Fatalf("Expected Results size %d, got %d", len(tt.links), len(task.Results))
+			}
+			for _, u := range tt.links {
+				v, ok := task.Results[u]
+				if !ok {
+					t.Fatalf("Expected Results to contain key %q", u)
+				}
+				if v != "" {
+					t.Fatalf("Expected empty status for %q, got %q", u, v)
+				}
+			}
+
 			successCount++
 		})
 	}
@@ -95,7 +110,6 @@ func TestAdd(t *testing.T) {
 func TestGet(t *testing.T) {
 	s := NewStorage()
 
-	// Подготавливаем данные
 	links1 := []string{"google.com"}
 	links2 := []string{"yandex.ru", "github.com"}
 	links3 := []string{"example.com"}
@@ -119,24 +133,9 @@ func TestGet(t *testing.T) {
 		wantFound bool
 		wantURLs  []string
 	}{
-		{
-			name:      "получение первой задачи",
-			id:        id1,
-			wantFound: true,
-			wantURLs:  links1,
-		},
-		{
-			name:      "получение второй задачи",
-			id:        id2,
-			wantFound: true,
-			wantURLs:  links2,
-		},
-		{
-			name:      "получение третьей задачи",
-			id:        id3,
-			wantFound: true,
-			wantURLs:  links3,
-		},
+		{"получение первой задачи", id1, true, links1},
+		{"получение второй задачи", id2, true, links2},
+		{"получение третьей задачи", id3, true, links3},
 	}
 
 	for _, tt := range tests {
@@ -153,8 +152,18 @@ func TestGet(t *testing.T) {
 					t.Errorf("Get() error = %v, want ErrNotExist", err)
 				}
 			}
+
 			if !reflect.DeepEqual(task.URLs, tt.wantURLs) {
 				t.Errorf("Get() URLs = %v, want %v", task.URLs, tt.wantURLs)
+			}
+
+			if task.Results == nil {
+				t.Error("Expected non-nil Results map")
+			}
+			for _, u := range tt.wantURLs {
+				if _, ok := task.Results[u]; !ok {
+					t.Errorf("Expected Results to contain key %q", u)
+				}
 			}
 		})
 	}
@@ -164,7 +173,6 @@ func TestGet(t *testing.T) {
 func TestGetInvalidID(t *testing.T) {
 	s := NewStorage()
 
-	// Добавляем одну задачу для проверки
 	_, err := s.Add([]string{"google.com"})
 	if err != nil {
 		t.Fatalf("Add() error = %v", err)
@@ -176,25 +184,9 @@ func TestGetInvalidID(t *testing.T) {
 		wantFound bool
 		wantEmpty bool
 	}{
-		{
-			name:      "ID == 0",
-			id:        0,
-			wantFound: false,
-			wantEmpty: true,
-		},
-		{
-			name:      "ID > кол-ва задач",
-			id:        2,
-			wantFound: false,
-			wantEmpty: true,
-		},
-
-		{
-			name:      "валидный ID",
-			id:        1,
-			wantFound: true,
-			wantEmpty: false,
-		},
+		{"ID == 0", 0, false, true},
+		{"ID > кол-ва задач", 2, false, true},
+		{"валидный ID", 1, true, false},
 	}
 
 	for _, tt := range tests {
@@ -211,13 +203,17 @@ func TestGetInvalidID(t *testing.T) {
 					t.Errorf("Get() error = %v, want ErrNotExist", err)
 				}
 			}
+
 			if tt.wantEmpty {
-				if task.URLs != nil || task.Status != "" {
+				if task.URLs != nil || task.Results != nil {
 					t.Errorf("Expected empty task, got %+v", task)
 				}
 			} else {
 				if task.URLs == nil {
 					t.Error("Expected non-empty task URLs")
+				}
+				if task.Results == nil {
+					t.Error("Expected non-nil Results map")
 				}
 			}
 		})
@@ -228,7 +224,6 @@ func TestGetInvalidID(t *testing.T) {
 func TestGetAll(t *testing.T) {
 	s := NewStorage()
 
-	// Подготавливаем данные
 	links1 := []string{"google.com"}
 	links2 := []string{"yandex.ru"}
 	links3 := []string{"github.com"}
@@ -276,6 +271,9 @@ func TestGetAll(t *testing.T) {
 				if !reflect.DeepEqual(task.URLs, tt.wantURLs) {
 					t.Errorf("Expected URLs %v for ID %d, got %v", tt.wantURLs, tt.id, task.URLs)
 				}
+				if task.Results == nil {
+					t.Fatalf("Expected non-nil Results for ID %d", tt.id)
+				}
 			})
 		}
 	})
@@ -311,7 +309,6 @@ func TestDump(t *testing.T) {
 	s := NewStorage()
 	storage := getStorageLinkStatus(s)
 
-	// Подготавливаем данные
 	links1 := []string{"google.com", "yandex.ru"}
 	links2 := []string{"github.com"}
 
@@ -324,10 +321,10 @@ func TestDump(t *testing.T) {
 		t.Fatalf("Add() error = %v", err)
 	}
 
-	// Устанавливаем статус для первой задачи
-	storage.links[id1-1].Status = "available"
+	// Устанавливаем статусы для первой задачи.
+	storage.links[id1-1].Results["google.com"] = "available"
+	storage.links[id1-1].Results["yandex.ru"] = "not available"
 
-	// Создаем временный файл
 	tmpFile, err := os.CreateTemp("", "test_dump_*.json")
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
@@ -335,12 +332,10 @@ func TestDump(t *testing.T) {
 	tmpFile.Close()
 	defer os.Remove(tmpFile.Name())
 
-	// Сохраняем данные
 	if err := s.Dump(tmpFile.Name()); err != nil {
 		t.Fatalf("Dump() error = %v, want nil", err)
 	}
 
-	// Проверяем содержимое файла
 	data, err := os.ReadFile(tmpFile.Name())
 	if err != nil {
 		t.Fatalf("Failed to read dumped file: %v", err)
@@ -351,56 +346,65 @@ func TestDump(t *testing.T) {
 		t.Fatalf("Failed to unmarshal dumped data: %v", err)
 	}
 
-	// Проверяем nextID
 	if savedData.NextID != 2 {
 		t.Errorf("Expected NextID 2, got %d", savedData.NextID)
 	}
-
-	// Проверяем количество задач
 	if len(savedData.LinkEntries) != 2 {
 		t.Fatalf("Expected 2 tasks, got %d", len(savedData.LinkEntries))
 	}
 
-	// Проверяем первую задачу
+	// Проверяем первую задачу.
 	if savedData.LinkEntries[0].ID != 1 {
 		t.Errorf("Expected ID 1, got %d", savedData.LinkEntries[0].ID)
 	}
 	if !reflect.DeepEqual(savedData.LinkEntries[0].URLs, links1) {
 		t.Errorf("Expected URLs %v, got %v", links1, savedData.LinkEntries[0].URLs)
 	}
-	if savedData.LinkEntries[0].Status != "available" {
-		t.Errorf("Expected status 'available', got %s", savedData.LinkEntries[0].Status)
+	if savedData.LinkEntries[0].Results["google.com"] != "available" {
+		t.Errorf("Expected google.com status 'available', got %q", savedData.LinkEntries[0].Results["google.com"])
+	}
+	if savedData.LinkEntries[0].Results["yandex.ru"] != "not available" {
+		t.Errorf("Expected yandex.ru status 'not available', got %q", savedData.LinkEntries[0].Results["yandex.ru"])
 	}
 
-	// Проверяем вторую задачу
+	// Проверяем вторую задачу.
 	if savedData.LinkEntries[1].ID != 2 {
 		t.Errorf("Expected ID 2, got %d", savedData.LinkEntries[1].ID)
 	}
 	if !reflect.DeepEqual(savedData.LinkEntries[1].URLs, links2) {
 		t.Errorf("Expected URLs %v, got %v", links2, savedData.LinkEntries[1].URLs)
 	}
+	if savedData.LinkEntries[1].Results == nil {
+		t.Fatalf("Expected non-nil Results for task 2")
+	}
+	if savedData.LinkEntries[1].Results["github.com"] != "" {
+		t.Errorf("Expected github.com empty status, got %q", savedData.LinkEntries[1].Results["github.com"])
+	}
 }
 
 // TestUpload проверяет загрузку задач из файла.
 func TestUpload(t *testing.T) {
-	// Создаем тестовые данные
 	testData := storageData{
 		NextID: 3,
 		LinkEntries: []taskWithID{
 			{
-				ID:     1,
-				URLs:   []string{"google.com", "yandex.ru"},
-				Status: "available",
+				ID:   1,
+				URLs: []string{"google.com", "yandex.ru"},
+				Results: map[string]string{
+					"google.com": "available",
+					"yandex.ru":  "not available",
+				},
 			},
 			{
-				ID:     2,
-				URLs:   []string{"github.com"},
-				Status: "",
+				ID:   2,
+				URLs: []string{"github.com"},
+				Results: map[string]string{
+					"github.com": "",
+				},
 			},
 		},
 	}
 
-	// Создаем временный файл с тестовыми данными
 	tmpFile, err := os.CreateTemp("", "test_upload_*.json")
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
@@ -416,7 +420,6 @@ func TestUpload(t *testing.T) {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	// Загружаем данные
 	s := NewStorage()
 	storage := getStorageLinkStatus(s)
 
@@ -424,36 +427,31 @@ func TestUpload(t *testing.T) {
 		t.Fatalf("Upload() error = %v, want nil", err)
 	}
 
-	// Проверяем nextID
 	if storage.nextID != 3 {
 		t.Errorf("Expected nextID 3, got %d", storage.nextID)
 	}
-
-	// Проверяем количество задач
 	if len(storage.links) != 2 {
 		t.Fatalf("Expected 2 tasks, got %d", len(storage.links))
 	}
 
-	// Проверяем первую задачу
+	// Проверяем первую задачу.
 	if !reflect.DeepEqual(storage.links[0].URLs, testData.LinkEntries[0].URLs) {
 		t.Errorf("Expected URLs %v, got %v", testData.LinkEntries[0].URLs, storage.links[0].URLs)
 	}
-	if storage.links[0].Status != "available" {
-		t.Errorf("Expected status 'available', got %s", storage.links[0].Status)
+	if storage.links[0].Results["google.com"] != "available" {
+		t.Errorf("Expected google.com 'available', got %q", storage.links[0].Results["google.com"])
 	}
 
-	// Проверяем вторую задачу
-	if !reflect.DeepEqual(storage.links[1].URLs, testData.LinkEntries[1].URLs) {
-		t.Errorf("Expected URLs %v, got %v", testData.LinkEntries[1].URLs, storage.links[1].URLs)
-	}
-
-	// Проверяем, что можно получить задачи по ID
+	// Проверяем, что можно получить задачи по ID.
 	task1, err := s.Get(1)
 	if err != nil {
 		t.Errorf("Get(1) error = %v, want nil", err)
 	}
 	if !reflect.DeepEqual(task1.URLs, testData.LinkEntries[0].URLs) {
 		t.Errorf("Get(1) URLs = %v, want %v", task1.URLs, testData.LinkEntries[0].URLs)
+	}
+	if task1.Results["yandex.ru"] != "not available" {
+		t.Errorf("Get(1) yandex.ru = %q, want %q", task1.Results["yandex.ru"], "not available")
 	}
 }
 
@@ -469,7 +467,6 @@ func TestUploadInvalidFile(t *testing.T) {
 
 // TestDumpAndUpload проверяет полный цикл сохранения и загрузки.
 func TestDumpAndUpload(t *testing.T) {
-	// Создаем хранилище и добавляем задачи
 	s1 := NewStorage()
 	links1 := []string{"google.com", "yandex.ru"}
 	links2 := []string{"github.com"}
@@ -483,12 +480,11 @@ func TestDumpAndUpload(t *testing.T) {
 		t.Fatalf("Add() error = %v", err)
 	}
 
-	// Устанавливаем статусы
 	storage1 := getStorageLinkStatus(s1)
-	storage1.links[id1-1].Status = "available"
-	storage1.links[id2-1].Status = "not available"
+	storage1.links[id1-1].Results["google.com"] = "available"
+	storage1.links[id1-1].Results["yandex.ru"] = "not available"
+	storage1.links[id2-1].Results["github.com"] = "not available"
 
-	// Сохраняем в файл
 	tmpFile, err := os.CreateTemp("", "test_roundtrip_*.json")
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
@@ -500,13 +496,11 @@ func TestDumpAndUpload(t *testing.T) {
 		t.Fatalf("Dump() error = %v, want nil", err)
 	}
 
-	// Загружаем в новое хранилище
 	s2 := NewStorage()
 	if err := s2.Upload(tmpFile.Name()); err != nil {
 		t.Fatalf("Upload() error = %v, want nil", err)
 	}
 
-	// Проверяем, что данные восстановились
 	task1, err := s2.Get(1)
 	if err != nil {
 		t.Errorf("Get(1) error = %v, want nil", err)
@@ -514,8 +508,8 @@ func TestDumpAndUpload(t *testing.T) {
 	if !reflect.DeepEqual(task1.URLs, links1) {
 		t.Errorf("Get(1) URLs = %v, want %v", task1.URLs, links1)
 	}
-	if task1.Status != "available" {
-		t.Errorf("Get(1) Status = %s, want 'available'", task1.Status)
+	if task1.Results["google.com"] != "available" {
+		t.Errorf("Get(1) google.com = %q, want %q", task1.Results["google.com"], "available")
 	}
 
 	task2, err := s2.Get(2)
@@ -525,11 +519,10 @@ func TestDumpAndUpload(t *testing.T) {
 	if !reflect.DeepEqual(task2.URLs, links2) {
 		t.Errorf("Get(2) URLs = %v, want %v", task2.URLs, links2)
 	}
-	if task2.Status != "not available" {
-		t.Errorf("Get(2) Status = %s, want 'not available'", task2.Status)
+	if task2.Results["github.com"] != "not available" {
+		t.Errorf("Get(2) github.com = %q, want %q", task2.Results["github.com"], "not available")
 	}
 
-	// Проверяем, что nextID восстановился
 	storage2 := getStorageLinkStatus(s2)
 	if storage2.nextID != 2 {
 		t.Errorf("Expected nextID 2, got %d", storage2.nextID)

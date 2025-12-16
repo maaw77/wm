@@ -12,9 +12,11 @@ var (
 	ErrEmptyInpData = errors.New("input data is empty or nil")
 )
 
+// LinkStatus описывает "задачу" (batch): список ссылок + результаты по каждой ссылке.
+// Results хранит значения "available"/"not available" (или пусто до обработки).
 type LinkStatus struct {
-	URLs   []string
-	Status string
+	URLs    []string          `json:"urls"`
+	Results map[string]string `json:"results"`
 }
 
 // Storage определяет интерфейс для хранения и управления задачами проверки ссылок.
@@ -22,12 +24,16 @@ type Storage interface {
 	// Add создает новую задачу с указанными ссылками и возвращает присвоенный ID.
 	// Возвращает ErrEmptyInpData, если links пустой или nil.
 	Add(links []string) (uint64, error)
+
 	// Get возвращает задачу по указанному ID. Возвращает ErrNotExist, если задача не найдена.
 	Get(id uint64) (LinkStatus, error)
+
 	// GetAll итерируется по всем задачам и вызывает функцию fn для каждой пары (id, LinkStatus).
 	GetAll(fn func(id uint64, links LinkStatus) bool)
+
 	// Dump сохраняет все задачи в файл links.json в формате JSON.
 	Dump(filename string) error
+
 	// Upload загружает задачи из файла links.json в формате JSON.
 	Upload(filename string) error
 }
@@ -51,9 +57,15 @@ func (s *StorageLinkStatus) Add(links []string) (uint64, error) {
 	s.nextID++
 	id := s.nextID
 
+	results := make(map[string]string, len(links))
+	for _, u := range links {
+		// Пустое значение = "еще не обработано".
+		results[u] = ""
+	}
+
 	task := LinkStatus{
-		URLs:   links,
-		Status: "", // статус будет установлен позже при обработке
+		URLs:    links,
+		Results: results,
 	}
 
 	s.links = append(s.links, task)
@@ -69,7 +81,7 @@ func (s *StorageLinkStatus) Get(id uint64) (LinkStatus, error) {
 		return LinkStatus{}, ErrNotExist
 	}
 
-	// ID начинается с 1, индекс массива с 0
+	// ID начинается с 1, индекс массива с 0.
 	index := id - 1
 	return s.links[index], nil
 }
@@ -80,7 +92,7 @@ func (s *StorageLinkStatus) GetAll(fn func(id uint64, links LinkStatus) bool) {
 	defer s.mu.RUnlock()
 
 	for i, status := range s.links {
-		id := uint64(i + 1) // ID начинается с 1
+		id := uint64(i + 1) // ID начинается с 1.
 		if !fn(id, status) {
 			break
 		}
@@ -89,9 +101,9 @@ func (s *StorageLinkStatus) GetAll(fn func(id uint64, links LinkStatus) bool) {
 
 // taskWithID представляет задачу с ID для сериализации в JSON.
 type taskWithID struct {
-	ID     uint64   `json:"id"`
-	URLs   []string `json:"urls"`
-	Status string   `json:"status"`
+	ID      uint64            `json:"id"`
+	URLs    []string          `json:"urls"`
+	Results map[string]string `json:"results"`
 }
 
 // storageData представляет структуру данных для сохранения в JSON.
@@ -113,9 +125,9 @@ func (s *StorageLinkStatus) Dump(filename string) error {
 	for i, linkStatus := range s.links {
 		id := uint64(i + 1)
 		data.LinkEntries = append(data.LinkEntries, taskWithID{
-			ID:     id,
-			URLs:   linkStatus.URLs,
-			Status: linkStatus.Status,
+			ID:      id,
+			URLs:    linkStatus.URLs,
+			Results: linkStatus.Results,
 		})
 	}
 
@@ -146,9 +158,15 @@ func (s *StorageLinkStatus) Upload(filename string) error {
 	s.links = make([]LinkStatus, 0, len(data.LinkEntries))
 
 	for _, task := range data.LinkEntries {
+		// На всякий случай гарантируем non-nil map.
+		res := task.Results
+		if res == nil {
+			res = map[string]string{}
+		}
+
 		s.links = append(s.links, LinkStatus{
-			URLs:   task.URLs,
-			Status: task.Status,
+			URLs:    task.URLs,
+			Results: res,
 		})
 	}
 
