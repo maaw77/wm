@@ -173,6 +173,7 @@ func TestGet(t *testing.T) {
 func TestGetInvalidID(t *testing.T) {
 	s := NewStorage()
 
+	// Добавляем одну задачу для проверки
 	_, err := s.Add([]string{"google.com"})
 	if err != nil {
 		t.Fatalf("Add() error = %v", err)
@@ -302,6 +303,60 @@ func TestGetAll(t *testing.T) {
 			t.Errorf("Expected 0 iterations, got %d", count)
 		}
 	})
+}
+
+// TestUpdateResults проверяет обновление результатов по ссылкам.
+func TestUpdateResults(t *testing.T) {
+	s := NewStorage()
+
+	id, err := s.Add([]string{"google.com", "yandex.ru"})
+	if err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	// Обновляем один статус и один "чужой" URL, которого нет в задаче.
+	err = s.UpdateResults(id, map[string]string{
+		"google.com": "available",
+		"unknown.io": "not available",
+	})
+	if err != nil {
+		t.Fatalf("UpdateResults() error = %v, want nil", err)
+	}
+
+	task, err := s.Get(id)
+	if err != nil {
+		t.Fatalf("Get() error = %v, want nil", err)
+	}
+
+	if task.Results["google.com"] != "available" {
+		t.Errorf("Expected google.com = %q, got %q", "available", task.Results["google.com"])
+	}
+	// "unknown.io" не должен добавляться.
+	if _, ok := task.Results["unknown.io"]; ok {
+		t.Errorf("Expected unknown.io to be ignored, but it exists in Results")
+	}
+	// Остальные ключи должны сохраниться.
+	if _, ok := task.Results["yandex.ru"]; !ok {
+		t.Errorf("Expected yandex.ru to remain in Results")
+	}
+}
+
+// TestUpdateResultsInvalidID проверяет ErrNotExist на неверном ID.
+func TestUpdateResultsInvalidID(t *testing.T) {
+	s := NewStorage()
+
+	_, err := s.Add([]string{"google.com"})
+	if err != nil {
+		t.Fatalf("Add() error = %v", err)
+	}
+
+	if err := s.UpdateResults(0, map[string]string{"google.com": "available"}); !errors.Is(err, ErrNotExist) {
+		t.Fatalf("Expected ErrNotExist for id=0, got %v", err)
+	}
+
+	if err := s.UpdateResults(2, map[string]string{"google.com": "available"}); !errors.Is(err, ErrNotExist) {
+		t.Fatalf("Expected ErrNotExist for id out of range, got %v", err)
+	}
 }
 
 // TestDump проверяет сохранение задач в файл.

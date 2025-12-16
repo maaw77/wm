@@ -31,6 +31,10 @@ type Storage interface {
 	// GetAll итерируется по всем задачам и вызывает функцию fn для каждой пары (id, LinkStatus).
 	GetAll(fn func(id uint64, links LinkStatus) bool)
 
+	// UpdateResults обновляет статусы по ссылкам для указанной задачи.
+	// Возвращает ErrNotExist, если задача не найдена.
+	UpdateResults(id uint64, results map[string]string) error
+
 	// Dump сохраняет все задачи в файл links.json в формате JSON.
 	Dump(filename string) error
 
@@ -97,6 +101,34 @@ func (s *StorageLinkStatus) GetAll(fn func(id uint64, links LinkStatus) bool) {
 			break
 		}
 	}
+}
+
+// UpdateResults обновляет статусы по ссылкам для указанной задачи.
+// Если задача не найдена, возвращает ErrNotExist.
+func (s *StorageLinkStatus) UpdateResults(id uint64, results map[string]string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if id == 0 || id > uint64(len(s.links)) {
+		return ErrNotExist
+	}
+
+	index := id - 1
+	task := &s.links[index]
+
+	if task.Results == nil {
+		task.Results = make(map[string]string, len(results))
+	}
+
+	// Обновляем только те ссылки, которые уже есть в задаче,
+	// чтобы не расширять задачу "чужими" URL.
+	for url, status := range results {
+		if _, ok := task.Results[url]; ok {
+			task.Results[url] = status
+		}
+	}
+
+	return nil
 }
 
 // taskWithID представляет задачу с ID для сериализации в JSON.
