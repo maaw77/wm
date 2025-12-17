@@ -71,3 +71,49 @@ func TestCheckLinks_OK(t *testing.T) {
 		t.Fatalf("storage expected %q=not available, got %q", bad, task.Results[bad])
 	}
 }
+
+func TestReportLinks_OK(t *testing.T) {
+	st := storage.NewStorage()
+	s := NewLinksServer(st, nil)
+
+	id1, err := st.Add([]string{"google.com"})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := st.UpdateResults(id1, map[string]string{"google.com": "available"}); err != nil {
+		t.Fatalf("UpdateResults: %v", err)
+	}
+
+	id2, err := st.Add([]string{"malformedlink.gg"})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if err := st.UpdateResults(id2, map[string]string{"malformedlink.gg": "not available"}); err != nil {
+		t.Fatalf("UpdateResults: %v", err)
+	}
+
+	body, _ := json.Marshal(dto.ReportRequest{LinksList: []uint64{id1, id2}})
+	req := httptest.NewRequest(http.MethodPost, "/report", bytes.NewReader(body))
+	rr := httptest.NewRecorder()
+
+	s.ReportLinksHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d, body=%s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+
+	if ct := rr.Header().Get("Content-Type"); ct != "application/pdf" {
+		t.Fatalf("expected Content-Type application/pdf, got %q", ct)
+	}
+	if cd := rr.Header().Get("Content-Disposition"); cd == "" {
+		t.Fatalf("expected Content-Disposition, got empty")
+	}
+
+	b := rr.Body.Bytes()
+	if len(b) < 4 {
+		t.Fatalf("expected non-empty pdf body")
+	}
+	if string(b[:4]) != "%PDF" {
+		t.Fatalf("expected PDF signature %%PDF, got %q", string(b[:4]))
+	}
+}

@@ -3,12 +3,14 @@ package service
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"wm/internal/dto"
+	"wm/internal/pdf"
 	"wm/internal/storage"
 )
 
@@ -140,16 +142,24 @@ func (s *linksServer) CheckLinksHandler(w http.ResponseWriter, r *http.Request) 
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// ReportLinksHandler читает список номеров задач и в будущем будет формировать PDF-отчет.
-// Сейчас только валидирует запрос и возвращает 501 Not Implemented.
+// ReportLinksHandler читает список номеров задач и формирует PDF-отчет со статусами ссылок.
 func (s *linksServer) ReportLinksHandler(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
+	// Защита от слишком больших JSON.
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+
 	var req dto.ReportRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := dec.Decode(&req); err != nil {
+		slog.Warn("Invalid request JSON", slog.Any("err", err))
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
@@ -158,5 +168,58 @@ func (s *linksServer) ReportLinksHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	http.Error(w, "not implemented", http.StatusNotImplemented)
+	slog.Info(
+		"Report generation started",
+		slog.Int("tasks_count", len(req.LinksList)),
+	)
+
+	// Собираем сводный статус по всем task_id из запроса.
+	// Если URL повторяется в разных задачах, будет последний перезаписавший (что обычно ок,
+	// т.к. статусы "available"/"not available" и источник один и тот же).
+	linksStatus := make(map[string]string)
+
+	for _, taskID := range req.LinksList {
+		task, err := s.store.Get(taskID)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotExist) {
+				http.Error(w, fmt.Sprintf("task %d not found", taskID), http.StatusNotFound)
+				return
+			}
+			slog.Error(
+				"Failed to get task from storage",
+				slog.Uint64("task_id", taskID),
+				slog.Any("err", err),
+			)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		for url, status := range task.Results {
+			// В storage могут быть пустые статусы сразу после Add().
+			// Для отчета трактуем пустое как "not available" (консервативно).
+			if status == "" {
+				status = "not available"
+			}
+			linksStatus[url] = status
+		}
+	}
+
+	pdfBytes, err := pdf.GenerateLinksStatusReport(linksStatus)
+	if err != nil {
+		slog.Error("Failed to generate PDF report", slog.Any("err", err))
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"report.pdf\"")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(pdfBytes)
+
+	slog.Info(
+		"Report generation completed",
+		slog.Int("tasks_count", len(req.LinksList)),
+		slog.Int("links_count", len(linksStatus)),
+		slog.Int64("duration_ms", time.Since(start).Milliseconds()),
+	)
 }
