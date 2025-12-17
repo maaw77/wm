@@ -104,7 +104,7 @@ func (s *StorageLinkStatus) GetAll(fn func(id uint64, links LinkStatus) bool) {
 }
 
 // UpdateResults обновляет статусы по ссылкам для указанной задачи.
-// Если задача не найдена, возвращает ErrNotExist.
+// Если запись не найдена, возвращает ErrNotExist.
 func (s *StorageLinkStatus) UpdateResults(id uint64, results map[string]string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -131,7 +131,7 @@ func (s *StorageLinkStatus) UpdateResults(id uint64, results map[string]string) 
 	return nil
 }
 
-// taskWithID представляет задачу с ID для сериализации в JSON.
+// taskWithID представляет запись с ID для сериализации в JSON.
 type taskWithID struct {
 	ID      uint64            `json:"id"`
 	URLs    []string          `json:"urls"`
@@ -144,7 +144,7 @@ type storageData struct {
 	LinkEntries []taskWithID `json:"link_entries"`
 }
 
-// Dump сохраняет все задачи в файл links.json в формате JSON.
+// Dump сохраняет все записи в файл links.json в формате JSON.
 func (s *StorageLinkStatus) Dump(filename string) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -171,7 +171,7 @@ func (s *StorageLinkStatus) Dump(filename string) error {
 	return os.WriteFile(filename, jsonData, 0644)
 }
 
-// Upload загружает задачи из файла links.json в формате JSON.
+// Upload загружает записи из файла links.json в формате JSON.
 func (s *StorageLinkStatus) Upload(filename string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -205,7 +205,7 @@ func (s *StorageLinkStatus) Upload(filename string) error {
 	return nil
 }
 
-// NewStorage создает и возвращает новый экземпляр хранилища задач.
+// NewStorage создает и возвращает новый экземпляр хранилища записей.
 func NewStorage() Storage {
 	return &StorageLinkStatus{
 		nextID: 0,

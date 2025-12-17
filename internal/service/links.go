@@ -16,12 +16,16 @@ const maxRequestBodyBytes = 1 << 20 // 1MB
 
 // linksServer инкапсулирует зависимости HTTP-обработчиков.
 type linksServer struct {
-	store storage.Storage
+	store  storage.Storage
+	client *http.Client
 }
 
 // NewLinksServer создает сервер с обработчиками для работы со ссылками.
-func NewLinksServer(store storage.Storage) *linksServer {
-	return &linksServer{store: store}
+func NewLinksServer(store storage.Storage, clnt *http.Client) *linksServer {
+	if clnt == nil {
+		clnt = &http.Client{Timeout: 5 * time.Second} // или создаем дефолтный
+	}
+	return &linksServer{store: store, client: clnt}
 }
 
 // CheckLinksHandler принимает список ссылок, проверяет их и возвращает статусы + номер набора.
@@ -68,7 +72,7 @@ func (s *linksServer) CheckLinksHandler(w http.ResponseWriter, r *http.Request) 
 	)
 
 	// Реальная проверка ссылок.
-	client := &http.Client{Timeout: 5 * time.Second}
+	// client := &http.Client{Timeout: 5 * time.Second}
 
 	statuses := make(map[string]string, len(req.Links))
 	for _, raw := range req.Links {
@@ -82,8 +86,8 @@ func (s *linksServer) CheckLinksHandler(w http.ResponseWriter, r *http.Request) 
 
 		status := "not available"
 
-		reqGet, _ := http.NewRequest(http.MethodGet, u, nil)
-		resp, err := client.Do(reqGet)
+		// reqGet, _ := http.NewRequest(http.MethodGet, u, nil)
+		resp, err := s.client.Get(u)
 		if err != nil {
 			slog.Warn(
 				"Link check error",

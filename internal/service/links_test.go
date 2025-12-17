@@ -29,7 +29,7 @@ func TestCheckLinks_OK(t *testing.T) {
 	bad := "nonexistent.invalid"
 
 	st := storage.NewStorage()
-	s := NewLinksServer(st)
+	s := NewLinksServer(st, nil)
 
 	body, _ := json.Marshal(dto.CheckLinksRequest{
 		Links: []string{okHostPort, bad},
