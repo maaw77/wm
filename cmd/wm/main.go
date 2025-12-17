@@ -46,7 +46,8 @@ func main() {
 		slog.Info("Storage state uploaded", slog.String("path", storagePath))
 	}
 
-	srv := service.NewLinksServer(store, &http.Client{Timeout: 5 * time.Second})
+	httpClient := &http.Client{Timeout: 5 * time.Second}
+	srv := service.NewLinksServer(store, httpClient)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/links", srv.CheckLinksHandler)
@@ -69,14 +70,30 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
+	var sig os.Signal
 	select {
-	case sig := <-sigCh:
-		slog.Info("Graceful shutdown initiated", slog.String("signal", sig.String()))
+	case sig = <-sigCh:
 	case err := <-errCh:
 		if err != nil {
 			slog.Error("HTTP server error", slog.Any("err", err))
 		}
 	}
+
+	var pendingTasks uint64
+	store.GetAll(func(id uint64, _ storage.LinkStatus) bool {
+		pendingTasks++
+		return true
+	})
+
+	signalStr := ""
+	if sig != nil {
+		signalStr = sig.String()
+	}
+
+	slog.Info("Graceful shutdown initiated",
+		slog.Uint64("pending_tasks", pendingTasks),
+		slog.String("signal", signalStr),
+	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
@@ -94,5 +111,7 @@ func main() {
 		slog.Info("Storage state dumped", slog.String("path", storagePath))
 	}
 
-	slog.Info("Shutdown complete", slog.Int64("duration_ms", time.Since(shutdownStart).Milliseconds()))
+	slog.Info("Shutdown complete",
+		slog.Int64("duration_ms", time.Since(shutdownStart).Milliseconds()),
+	)
 }
