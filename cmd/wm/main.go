@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -19,18 +20,30 @@ const (
 	addr            = ":8080"
 	dataDir         = "data"
 	storageFileName = "links.json"
+
 	shutdownTimeout = 15 * time.Second
 )
 
-// main запускает HTTP-сервер и корректно завершает работу с сохранением состояния.
+var shuttingDown atomic.Bool
+
+func rejectWhenShuttingDown(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if shuttingDown.Load() {
+			http.Error(w, "сервер завершает работу", http.StatusServiceUnavailable)
+			return
+		}
+		next(w, r)
+	}
+}
+
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	})))
 
 	store := storage.NewStorage()
-
 	storagePath := filepath.Join(dataDir, storageFileName)
+
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
 		slog.Error("Failed to create data directory", slog.String("dir", dataDir), slog.Any("err", err))
 		os.Exit(1)
@@ -50,10 +63,10 @@ func main() {
 	srv := service.NewLinksServer(store, httpClient)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/links", srv.CheckLinksHandler)
-	mux.HandleFunc("/report", srv.ReportLinksHandler)
+	mux.HandleFunc("/links", rejectWhenShuttingDown(srv.CheckLinksHandler))
+	mux.HandleFunc("/report", rejectWhenShuttingDown(srv.ReportLinksHandler))
 
-	httpServer := &http.Server{
+	httpServer := http.Server{
 		Addr:    addr,
 		Handler: mux,
 	}
@@ -79,6 +92,9 @@ func main() {
 		}
 	}
 
+	// 1) Переходим в режим “остановки”: новые запросы сразу отклоняем с 503.
+	shuttingDown.Store(true)
+
 	var pendingTasks uint64
 	store.GetAll(func(id uint64, _ storage.LinkStatus) bool {
 		pendingTasks++
@@ -91,10 +107,11 @@ func main() {
 	}
 
 	slog.Info("Graceful shutdown initiated",
-		slog.Uint64("pending_tasks", pendingTasks),
+		slog.Uint64("pendingtasks", pendingTasks),
 		slog.String("signal", signalStr),
 	)
 
+	// 2) Перестаём принимать новые соединения и ждём завершения активных handler-ов.
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 
@@ -105,6 +122,7 @@ func main() {
 		slog.Info("HTTP server stopped")
 	}
 
+	// 3) Сохраняем состояние на диск.
 	if err := store.Dump(storagePath); err != nil {
 		slog.Error("Failed to dump storage state", slog.String("path", storagePath), slog.Any("err", err))
 	} else {
@@ -112,6 +130,6 @@ func main() {
 	}
 
 	slog.Info("Shutdown complete",
-		slog.Int64("duration_ms", time.Since(shutdownStart).Milliseconds()),
+		slog.Int64("durationms", time.Since(shutdownStart).Milliseconds()),
 	)
 }
