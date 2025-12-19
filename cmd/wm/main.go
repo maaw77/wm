@@ -12,16 +12,14 @@ import (
 	"syscall"
 	"time"
 
+	"wm/config"
 	"wm/internal/service"
 	"wm/internal/storage"
 )
 
 const (
-	addr            = ":8080"
 	dataDir         = "data"
 	storageFileName = "links.json"
-
-	shutdownTimeout = 15 * time.Second
 )
 
 var shuttingDown atomic.Bool
@@ -29,7 +27,7 @@ var shuttingDown atomic.Bool
 func rejectWhenShuttingDown(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if shuttingDown.Load() {
-			http.Error(w, "сервер завершает работу", http.StatusServiceUnavailable)
+			http.Error(w, "HTTP server is shutting down", http.StatusServiceUnavailable)
 			return
 		}
 		next(w, r)
@@ -40,6 +38,8 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	})))
+
+	config.InitConfig("./config/config.yaml")
 
 	store := storage.NewStorage()
 	storagePath := filepath.Join(dataDir, storageFileName)
@@ -59,21 +59,18 @@ func main() {
 		slog.Info("Storage state uploaded", slog.String("path", storagePath))
 	}
 
-	httpClient := &http.Client{Timeout: 5 * time.Second}
+	httpClient := config.NewConfiguredHTTPClient()
+
 	srv := service.NewLinksServer(store, httpClient)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/links", rejectWhenShuttingDown(srv.CheckLinksHandler))
 	mux.HandleFunc("/report", rejectWhenShuttingDown(srv.ReportLinksHandler))
 
-	httpServer := http.Server{
-		Addr:    addr,
-		Handler: mux,
-	}
-
+	httpServer := config.NewConfiguredHTTPServer(mux)
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("HTTP server started", slog.String("addr", addr))
+		slog.Info("HTTP server started", slog.String("addr", httpServer.Addr))
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
@@ -112,6 +109,7 @@ func main() {
 	)
 
 	// 2) Перестаём принимать новые соединения и ждём завершения активных handler-ов.
+	shutdownTimeout := config.GetConfiguredShutdownTimeout()
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 

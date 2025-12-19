@@ -1,0 +1,8 @@
+server:
+  Addr: 0.0.0.0:8080
+  WriteTimeout: 25 # Seconds
+  ReadTimeout: 25 # Seconds
+  IdleTimeout: 70 # Seconds
+  ShutdownTimeout: 25 # Seconds
+client:
+  Timeout: 10  # Seconds
