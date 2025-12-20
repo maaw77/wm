@@ -31,6 +31,9 @@ func InitConfig(pathConfig string) {
 
 		viper.SetDefault("client.Timeout", 5)
 
+		viper.SetDefault("storage.DataDir", "data")
+		viper.SetDefault("storage.FileName", "links.json")
+
 		return
 	}
 
@@ -58,4 +61,12 @@ func NewConfiguredHTTPClient() *http.Client {
 
 func GetConfiguredShutdownTimeout() time.Duration {
 	return time.Second * viper.GetDuration("server.ShutdownTimeout")
+}
+
+func GetConfiguredStorageDataDir() string {
+	return viper.GetString("storage.DataDir")
+}
+
+func GetConfiguredStorageFileName() string {
+	return viper.GetString("storage.FileName")
 }

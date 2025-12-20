@@ -6,3 +6,6 @@ server:
   ShutdownTimeout: 25 # Seconds
 client:
   Timeout: 10  # Seconds
+storage:
+  DataDir: data
+  FileName: links.json

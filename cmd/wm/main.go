@@ -17,11 +17,6 @@ import (
 	"wm/internal/storage"
 )
 
-const (
-	dataDir         = "data"
-	storageFileName = "links.json"
-)
-
 var shuttingDown atomic.Bool
 
 func rejectWhenShuttingDown(next http.HandlerFunc) http.HandlerFunc {
@@ -42,10 +37,10 @@ func main() {
 	config.InitConfig("./config/config.yaml")
 
 	store := storage.NewStorage()
-	storagePath := filepath.Join(dataDir, storageFileName)
+	storagePath := filepath.Join(config.GetConfiguredStorageDataDir(), config.GetConfiguredStorageFileName())
 
-	if err := os.MkdirAll(dataDir, 0o755); err != nil {
-		slog.Error("Failed to create data directory", slog.String("dir", dataDir), slog.Any("err", err))
+	if err := os.MkdirAll(config.GetConfiguredStorageDataDir(), 0o755); err != nil {
+		slog.Error("Failed to create data directory", slog.String("dir", config.GetConfiguredStorageDataDir()), slog.Any("err", err))
 		os.Exit(1)
 	}
 
