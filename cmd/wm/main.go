@@ -1,3 +1,11 @@
+// Package main запускает HTTP-сервис проверки доступности ссылок.
+//
+// Эндпоинты:
+// - POST /links: проверка ссылок и выдача статусов + номер набора.
+// - POST /report: генерация PDF-отчета по ранее созданным наборам.
+//
+// Поддерживается graceful shutdown: при остановке новые запросы получают 503,
+// затем сервер корректно завершается и состояние in-memory storage сохраняется на диск.
 package main
 
 import (
@@ -18,8 +26,10 @@ import (
 	"wm/internal/storage"
 )
 
+// shuttingDown включает режим остановки: новые запросы отклоняются с 503.
 var shuttingDown atomic.Bool
 
+// rejectWhenShuttingDown отклоняет запросы с 503, если начат graceful shutdown.
 func rejectWhenShuttingDown(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if shuttingDown.Load() {
@@ -30,6 +40,11 @@ func rejectWhenShuttingDown(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// main запускает сервер, ожидает SIGINT/SIGTERM и при остановке сохраняет состояние storage.
+//
+// Конфигурация задается флагом -config (по умолчанию "./config/config.yaml") и
+// используется для настройки HTTP-сервера/клиента, таймаута graceful shutdown,
+// а также пути к файлу состояния storage.
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,

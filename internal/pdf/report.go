@@ -1,3 +1,4 @@
+// Package pdf содержит генерацию PDF-отчета по результатам проверки ссылок.
 package pdf
 
 import (
@@ -9,7 +10,9 @@ import (
 )
 
 // GenerateLinksStatusReport генерирует PDF-отчет со сводной таблицей URL|Status.
-// linksStatus: ключ = URL , значение = "available"/"not available".
+//
+// linksStatus: ключ = URL, значение = "available" / "not available".
+// Возвращает байты PDF-файла или ошибку генерации.
 func GenerateLinksStatusReport(linksStatus map[string]string) ([]byte, error) {
 	p := gofpdf.New("P", "mm", "A4", "")
 	p.SetMargins(10, 10, 10)
@@ -19,7 +22,7 @@ func GenerateLinksStatusReport(linksStatus map[string]string) ([]byte, error) {
 	p.Cell(0, 10, "Links report")
 	p.Ln(12)
 
-	// Table header
+	// Заголовок таблицы.
 	p.SetFont("Arial", "B", 11)
 	colURL := 140.0
 	colStatus := 40.0
@@ -55,6 +58,7 @@ func GenerateLinksStatusReport(linksStatus map[string]string) ([]byte, error) {
 
 		p.SetXY(x, y+hUsed)
 
+		// Простейшая защита от выхода за пределы страницы.
 		if p.GetY() > 280 {
 			p.AddPage()
 		}

@@ -1,3 +1,10 @@
+// Package config отвечает за загрузку конфигурации приложения и создание настроенных клиентов.
+//
+// Конфигурация читается из YAML-файла через Viper и используется для:
+// - параметров HTTP-сервера (addr, таймауты);
+// - параметров HTTP-клиента (timeout);
+// - параметров storage (директория и имя файла состояния);
+// - таймаута graceful shutdown.
 package config
 
 import (
@@ -11,7 +18,9 @@ import (
 )
 
 // InitConfig инициализирует конфиг из YAML через Viper.
-// Если файл не найден/не читается — выставляются дефолты.
+//
+// pathConfig — путь до YAML-файла конфигурации.
+// Если файл не найден или не читается, используются значения по умолчанию.
 func InitConfig(pathConfig string) {
 	dir, file := filepath.Split(pathConfig)
 	fileName := strings.Split(file, ".")[0]
@@ -40,8 +49,10 @@ func InitConfig(pathConfig string) {
 	slog.Info("Configuration loaded from file", slog.String("path", pathConfig))
 }
 
-// NewConfiguredHTTPServer создает http.Server из конфига и обязательно
-// прокидывает Handler (mux), чтобы использовались зарегистрированные роуты.
+// NewConfiguredHTTPServer создает http.Server из значений конфига.
+//
+// Важно: функция принимает mux и устанавливает его в поле Handler,
+// чтобы сервер использовал зарегистрированные роуты.
 func NewConfiguredHTTPServer(mux *http.ServeMux) http.Server {
 	return http.Server{
 		Addr:         viper.GetString("server.Addr"),
@@ -52,21 +63,24 @@ func NewConfiguredHTTPServer(mux *http.ServeMux) http.Server {
 	}
 }
 
-// NewConfiguredHTTPClient создает http.Client из конфига.
+// NewConfiguredHTTPClient создает http.Client с таймаутом из конфига.
 func NewConfiguredHTTPClient() *http.Client {
 	return &http.Client{
 		Timeout: time.Second * viper.GetDuration("client.Timeout"),
 	}
 }
 
+// GetConfiguredShutdownTimeout возвращает timeout graceful shutdown из конфига.
 func GetConfiguredShutdownTimeout() time.Duration {
 	return time.Second * viper.GetDuration("server.ShutdownTimeout")
 }
 
+// GetConfiguredStorageDataDir возвращает директорию для файла состояния storage из конфига.
 func GetConfiguredStorageDataDir() string {
 	return viper.GetString("storage.DataDir")
 }
 
+// GetConfiguredStorageFileName возвращает имя файла состояния storage из конфига.
 func GetConfiguredStorageFileName() string {
 	return viper.GetString("storage.FileName")
 }

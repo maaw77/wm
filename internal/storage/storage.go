@@ -1,3 +1,11 @@
+// Package storage реализует in-memory хранилище задач проверки ссылок.
+//
+// Хранилище поддерживает:
+// - добавление новой задачи со списком ссылок (Add);
+// - получение задачи по ID (Get);
+// - итерацию по всем задачам (GetAll);
+// - обновление результатов проверки (UpdateResults);
+// - сохранение/восстановление состояния в JSON-файл (Dump/Upload).
 package storage
 
 import (
@@ -8,7 +16,9 @@ import (
 )
 
 var (
-	ErrNotExist     = errors.New("it doesn't exist")
+	// ErrNotExist возвращается при обращении к несуществующему ID задачи.
+	ErrNotExist = errors.New("it doesn't exist")
+	// ErrEmptyInpData возвращается при попытке создать задачу с пустым или nil списком ссылок.
 	ErrEmptyInpData = errors.New("input data is empty or nil")
 )
 
@@ -17,21 +27,39 @@ type LinkStatus struct {
 	Results map[string]string `json:"results"`
 }
 
+// Storage описывает интерфейс in-memory хранилища задач.
 type Storage interface {
+	// Add создает новую задачу и возвращает её ID (начиная с 1).
 	Add(links []string) (uint64, error)
+
+	// Get возвращает задачу по ID.
 	Get(id uint64) (LinkStatus, error)
+
+	// GetAll — итератор по всем записям хранилища.
+	//
+	// Для каждой записи вызывает fn(id, task) в порядке добавления.
+	// Если fn возвращает false, итерация прекращается.
 	GetAll(fn func(id uint64, links LinkStatus) bool)
+
+	// UpdateResults обновляет статусы ссылок в задаче по ID.
+	// Обновляются только те URL, которые уже существуют в задаче; лишние ключи игнорируются.
 	UpdateResults(id uint64, results map[string]string) error
+
+	// Dump сохраняет текущее состояние в JSON-файл.
 	Dump(filename string) error
+
+	// Upload загружает состояние из JSON-файла и восстанавливает задачи в памяти.
 	Upload(filename string) error
 }
 
+// StorageLinkStatus — потокобезопасная реализация Storage на базе среза задач.
 type StorageLinkStatus struct {
 	mu     sync.RWMutex
 	nextID uint64
 	links  []LinkStatus
 }
 
+// NewStorage создает пустое in-memory хранилище.
 func NewStorage() Storage {
 	return &StorageLinkStatus{
 		nextID: 0,
@@ -39,6 +67,7 @@ func NewStorage() Storage {
 	}
 }
 
+// Add добавляет новую задачу со списком ссылок и возвращает её ID.
 func (s *StorageLinkStatus) Add(links []string) (uint64, error) {
 	if len(links) == 0 {
 		return 0, ErrEmptyInpData
@@ -64,6 +93,7 @@ func (s *StorageLinkStatus) Add(links []string) (uint64, error) {
 	return id, nil
 }
 
+// Get возвращает задачу по ID.
 func (s *StorageLinkStatus) Get(id uint64) (LinkStatus, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -76,6 +106,7 @@ func (s *StorageLinkStatus) Get(id uint64) (LinkStatus, error) {
 	return s.links[index], nil
 }
 
+// GetAll итерируется по всем задачам и вызывает fn для каждой записи.
 func (s *StorageLinkStatus) GetAll(fn func(id uint64, links LinkStatus) bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -88,6 +119,7 @@ func (s *StorageLinkStatus) GetAll(fn func(id uint64, links LinkStatus) bool) {
 	}
 }
 
+// UpdateResults обновляет результаты по ссылкам для задачи с указанным ID.
 func (s *StorageLinkStatus) UpdateResults(id uint64, results map[string]string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -123,6 +155,7 @@ type storageData struct {
 	LinkEntries []taskWithID `json:"linkentries"`
 }
 
+// Dump сохраняет состояние хранилища в JSON-файл.
 func (s *StorageLinkStatus) Dump(filename string) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -148,6 +181,7 @@ func (s *StorageLinkStatus) Dump(filename string) error {
 	return os.WriteFile(filename, jsonData, 0o644)
 }
 
+// Upload загружает состояние хранилища из JSON-файла.
 func (s *StorageLinkStatus) Upload(filename string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

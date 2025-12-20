@@ -1,3 +1,4 @@
+// Package service содержит HTTP-обработчики и бизнес-логику сервиса проверки ссылок.
 package service
 
 import (
@@ -23,6 +24,9 @@ type linksServer struct {
 }
 
 // NewLinksServer создает сервер с обработчиками для работы со ссылками.
+//
+// store — in-memory хранилище задач.
+// clnt — HTTP-клиент для проверки ссылок; если nil, используется дефолтный клиент с таймаутом.
 func NewLinksServer(store storage.Storage, clnt *http.Client) *linksServer {
 	if clnt == nil {
 		clnt = &http.Client{Timeout: 5 * time.Second} // или создаем дефолтный
@@ -31,6 +35,15 @@ func NewLinksServer(store storage.Storage, clnt *http.Client) *linksServer {
 }
 
 // CheckLinksHandler принимает список ссылок, проверяет их и возвращает статусы + номер набора.
+//
+// Метод: POST /links
+// Тело: { "links": ["google.com", "example.com"] }
+// Ответ: { "links": { "google.com": "available" }, "links_num": 1 }
+//
+// Правила:
+// - Размер JSON ограничен 1MB.
+// - Неизвестные поля в JSON запрещены.
+// - Если схема не указана, добавляется "http://".
 func (s *linksServer) CheckLinksHandler(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
@@ -73,9 +86,6 @@ func (s *linksServer) CheckLinksHandler(w http.ResponseWriter, r *http.Request) 
 		slog.Int("links_count", len(req.Links)),
 	)
 
-	// Реальная проверка ссылок.
-	// client := &http.Client{Timeout: 5 * time.Second}
-
 	statuses := make(map[string]string, len(req.Links))
 	for _, raw := range req.Links {
 		linkStart := time.Now()
@@ -88,7 +98,6 @@ func (s *linksServer) CheckLinksHandler(w http.ResponseWriter, r *http.Request) 
 
 		status := "not available"
 
-		// reqGet, _ := http.NewRequest(http.MethodGet, u, nil)
 		resp, err := s.client.Get(u)
 		if err != nil {
 			slog.Warn(
@@ -115,7 +124,7 @@ func (s *linksServer) CheckLinksHandler(w http.ResponseWriter, r *http.Request) 
 		)
 	}
 
-	// Сохраняем результаты в in-memory storage
+	// Сохраняем результаты в in-memory storage.
 	if err := s.store.UpdateResults(taskID, statuses); err != nil {
 		slog.Error(
 			"Failed to update results in storage",
@@ -143,6 +152,16 @@ func (s *linksServer) CheckLinksHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 // ReportLinksHandler читает список номеров задач и формирует PDF-отчет со статусами ссылок.
+//
+// Метод: POST /report
+// Тело: { "links_list": [1, 2] }
+// Ответ: PDF-файл (Content-Type: application/pdf)
+//
+// Правила:
+// - Размер JSON ограничен 1MB.
+// - Неизвестные поля в JSON запрещены.
+// - Если задача не найдена — 404.
+// - Пустой статус в storage трактуется как "not available".
 func (s *linksServer) ReportLinksHandler(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
@@ -174,8 +193,7 @@ func (s *linksServer) ReportLinksHandler(w http.ResponseWriter, r *http.Request)
 	)
 
 	// Собираем сводный статус по всем task_id из запроса.
-	// Если URL повторяется в разных задачах, будет последний перезаписавший (что обычно ок,
-	// т.к. статусы "available"/"not available" и источник один и тот же).
+	// Если URL повторяется в разных задачах, будет последний перезаписавший.
 	linksStatus := make(map[string]string)
 
 	for _, taskID := range req.LinksList {
