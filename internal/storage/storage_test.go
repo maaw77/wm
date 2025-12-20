@@ -75,9 +75,6 @@ func TestAdd(t *testing.T) {
 			}
 
 			task := storage.links[index]
-			if !reflect.DeepEqual(task.URLs, tt.links) {
-				t.Errorf("Expected URLs %v, got %v", tt.links, task.URLs)
-			}
 
 			// Results должен быть инициализирован и содержать все URL с пустыми статусами.
 			if task.Results == nil {
@@ -153,12 +150,11 @@ func TestGet(t *testing.T) {
 				}
 			}
 
-			if !reflect.DeepEqual(task.URLs, tt.wantURLs) {
-				t.Errorf("Get() URLs = %v, want %v", task.URLs, tt.wantURLs)
-			}
-
 			if task.Results == nil {
 				t.Error("Expected non-nil Results map")
+			}
+			if len(task.Results) != len(tt.wantURLs) {
+				t.Errorf("Expected Results size %d, got %d", len(tt.wantURLs), len(task.Results))
 			}
 			for _, u := range tt.wantURLs {
 				if _, ok := task.Results[u]; !ok {
@@ -183,11 +179,10 @@ func TestGetInvalidID(t *testing.T) {
 		name      string
 		id        uint64
 		wantFound bool
-		wantEmpty bool
 	}{
-		{"ID == 0", 0, false, true},
-		{"ID > кол-ва задач", 2, false, true},
-		{"валидный ID", 1, true, false},
+		{"ID == 0", 0, false},
+		{"ID > кол-ва задач", 2, false},
+		{"валидный ID", 1, true},
 	}
 
 	for _, tt := range tests {
@@ -197,24 +192,14 @@ func TestGetInvalidID(t *testing.T) {
 				if err != nil {
 					t.Errorf("Get() error = %v, want nil", err)
 				}
+				if task.Results == nil {
+					t.Error("Expected non-nil Results map")
+				}
 			} else {
 				if err == nil {
 					t.Error("Get() error = nil, want ErrNotExist")
 				} else if !errors.Is(err, ErrNotExist) {
 					t.Errorf("Get() error = %v, want ErrNotExist", err)
-				}
-			}
-
-			if tt.wantEmpty {
-				if task.URLs != nil || task.Results != nil {
-					t.Errorf("Expected empty task, got %+v", task)
-				}
-			} else {
-				if task.URLs == nil {
-					t.Error("Expected non-empty task URLs")
-				}
-				if task.Results == nil {
-					t.Error("Expected non-nil Results map")
 				}
 			}
 		})
@@ -269,11 +254,16 @@ func TestGetAll(t *testing.T) {
 				if !ok {
 					t.Fatalf("Task with ID %d not found in collected", tt.id)
 				}
-				if !reflect.DeepEqual(task.URLs, tt.wantURLs) {
-					t.Errorf("Expected URLs %v for ID %d, got %v", tt.wantURLs, tt.id, task.URLs)
-				}
 				if task.Results == nil {
 					t.Fatalf("Expected non-nil Results for ID %d", tt.id)
+				}
+				if len(task.Results) != len(tt.wantURLs) {
+					t.Fatalf("Expected %d results for ID %d, got %d", len(tt.wantURLs), tt.id, len(task.Results))
+				}
+				for _, u := range tt.wantURLs {
+					if _, ok := task.Results[u]; !ok {
+						t.Errorf("Expected Results to contain key %q for ID %d", u, tt.id)
+					}
 				}
 			})
 		}
@@ -412,9 +402,6 @@ func TestDump(t *testing.T) {
 	if savedData.LinkEntries[0].ID != 1 {
 		t.Errorf("Expected ID 1, got %d", savedData.LinkEntries[0].ID)
 	}
-	if !reflect.DeepEqual(savedData.LinkEntries[0].URLs, links1) {
-		t.Errorf("Expected URLs %v, got %v", links1, savedData.LinkEntries[0].URLs)
-	}
 	if savedData.LinkEntries[0].Results["google.com"] != "available" {
 		t.Errorf("Expected google.com status 'available', got %q", savedData.LinkEntries[0].Results["google.com"])
 	}
@@ -425,9 +412,6 @@ func TestDump(t *testing.T) {
 	// Проверяем вторую задачу.
 	if savedData.LinkEntries[1].ID != 2 {
 		t.Errorf("Expected ID 2, got %d", savedData.LinkEntries[1].ID)
-	}
-	if !reflect.DeepEqual(savedData.LinkEntries[1].URLs, links2) {
-		t.Errorf("Expected URLs %v, got %v", links2, savedData.LinkEntries[1].URLs)
 	}
 	if savedData.LinkEntries[1].Results == nil {
 		t.Fatalf("Expected non-nil Results for task 2")
@@ -443,16 +427,14 @@ func TestUpload(t *testing.T) {
 		NextID: 3,
 		LinkEntries: []taskWithID{
 			{
-				ID:   1,
-				URLs: []string{"google.com", "yandex.ru"},
+				ID: 1,
 				Results: map[string]string{
 					"google.com": "available",
 					"yandex.ru":  "not available",
 				},
 			},
 			{
-				ID:   2,
-				URLs: []string{"github.com"},
+				ID: 2,
 				Results: map[string]string{
 					"github.com": "",
 				},
@@ -471,7 +453,7 @@ func TestUpload(t *testing.T) {
 		t.Fatalf("Failed to marshal test data: %v", err)
 	}
 
-	if err := os.WriteFile(tmpFile.Name(), jsonData, 0644); err != nil {
+	if err := os.WriteFile(tmpFile.Name(), jsonData, 0o644); err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
@@ -490,11 +472,8 @@ func TestUpload(t *testing.T) {
 	}
 
 	// Проверяем первую задачу.
-	if !reflect.DeepEqual(storage.links[0].URLs, testData.LinkEntries[0].URLs) {
-		t.Errorf("Expected URLs %v, got %v", testData.LinkEntries[0].URLs, storage.links[0].URLs)
-	}
-	if storage.links[0].Results["google.com"] != "available" {
-		t.Errorf("Expected google.com 'available', got %q", storage.links[0].Results["google.com"])
+	if !reflect.DeepEqual(storage.links[0].Results, testData.LinkEntries[0].Results) {
+		t.Errorf("Expected Results %v, got %v", testData.LinkEntries[0].Results, storage.links[0].Results)
 	}
 
 	// Проверяем, что можно получить задачи по ID.
@@ -502,8 +481,8 @@ func TestUpload(t *testing.T) {
 	if err != nil {
 		t.Errorf("Get(1) error = %v, want nil", err)
 	}
-	if !reflect.DeepEqual(task1.URLs, testData.LinkEntries[0].URLs) {
-		t.Errorf("Get(1) URLs = %v, want %v", task1.URLs, testData.LinkEntries[0].URLs)
+	if !reflect.DeepEqual(task1.Results, testData.LinkEntries[0].Results) {
+		t.Errorf("Get(1) Results = %v, want %v", task1.Results, testData.LinkEntries[0].Results)
 	}
 	if task1.Results["yandex.ru"] != "not available" {
 		t.Errorf("Get(1) yandex.ru = %q, want %q", task1.Results["yandex.ru"], "not available")
@@ -560,9 +539,6 @@ func TestDumpAndUpload(t *testing.T) {
 	if err != nil {
 		t.Errorf("Get(1) error = %v, want nil", err)
 	}
-	if !reflect.DeepEqual(task1.URLs, links1) {
-		t.Errorf("Get(1) URLs = %v, want %v", task1.URLs, links1)
-	}
 	if task1.Results["google.com"] != "available" {
 		t.Errorf("Get(1) google.com = %q, want %q", task1.Results["google.com"], "available")
 	}
@@ -570,9 +546,6 @@ func TestDumpAndUpload(t *testing.T) {
 	task2, err := s2.Get(2)
 	if err != nil {
 		t.Errorf("Get(2) error = %v, want nil", err)
-	}
-	if !reflect.DeepEqual(task2.URLs, links2) {
-		t.Errorf("Get(2) URLs = %v, want %v", task2.URLs, links2)
 	}
 	if task2.Results["github.com"] != "not available" {
 		t.Errorf("Get(2) github.com = %q, want %q", task2.Results["github.com"], "not available")
