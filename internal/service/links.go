@@ -1,0 +1,239 @@
+// Package service содержит HTTP-обработчики и бизнес-логику сервиса проверки ссылок.
+package service
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"strings"
+	"time"
+
+	"wm/internal/dto"
+	"wm/internal/pdf"
+	"wm/internal/storage"
+)
+
+const maxRequestBodyBytes = 1 << 20 // 1MB
+
+// linksServer инкапсулирует зависимости HTTP-обработчиков.
+type linksServer struct {
+	store  storage.Storage
+	client *http.Client
+}
+
+// NewLinksServer создает сервер с обработчиками для работы со ссылками.
+//
+// store — in-memory хранилище задач.
+// clnt — HTTP-клиент для проверки ссылок; если nil, используется дефолтный клиент с таймаутом.
+func NewLinksServer(store storage.Storage, clnt *http.Client) *linksServer {
+	if clnt == nil {
+		clnt = &http.Client{Timeout: 5 * time.Second} // или создаем дефолтный
+	}
+	return &linksServer{store: store, client: clnt}
+}
+
+// CheckLinksHandler принимает список ссылок, проверяет их и возвращает статусы + номер набора.
+//
+// Метод: POST /links
+// Тело: { "links": ["google.com", "example.com"] }
+// Ответ: { "links": { "google.com": "available" }, "links_num": 1 }
+//
+// Правила:
+// - Размер JSON ограничен 1MB.
+// - Неизвестные поля в JSON запрещены.
+// - Если схема не указана, добавляется "http://".
+func (s *linksServer) CheckLinksHandler(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Защита от слишком больших JSON.
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+
+	var req dto.CheckLinksRequest
+	if err := dec.Decode(&req); err != nil {
+		slog.Warn("Invalid request JSON", slog.Any("err", err))
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if len(req.Links) == 0 {
+		http.Error(w, "links must not be empty", http.StatusBadRequest)
+		return
+	}
+
+	taskID, err := s.store.Add(req.Links)
+	if err != nil {
+		if errors.Is(err, storage.ErrEmptyInpData) {
+			http.Error(w, "links must not be empty", http.StatusBadRequest)
+			return
+		}
+		slog.Error("Failed to add batch to storage", slog.Any("err", err))
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	slog.Info(
+		"Batch processing started",
+		slog.Uint64("task_id", taskID),
+		slog.Int("links_count", len(req.Links)),
+	)
+
+	statuses := make(map[string]string, len(req.Links))
+	for _, raw := range req.Links {
+		linkStart := time.Now()
+
+		u := raw
+		// Если схема не указана, добавляет http://.
+		if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+			u = "http://" + u
+		}
+
+		status := "not available"
+
+		resp, err := s.client.Get(u)
+		if err != nil {
+			slog.Warn(
+				"Link check error",
+				slog.Uint64("task_id", taskID),
+				slog.String("link", raw),
+				slog.Any("err", err),
+			)
+		} else {
+			_ = resp.Body.Close()
+			if resp.StatusCode < 400 {
+				status = "available"
+			}
+		}
+
+		statuses[raw] = status
+
+		slog.Info(
+			"Link check completed",
+			slog.Uint64("task_id", taskID),
+			slog.String("link", raw),
+			slog.String("status", status),
+			slog.Int64("duration_ms", time.Since(linkStart).Milliseconds()),
+		)
+	}
+
+	// Сохраняет результаты в in-memory storage.
+	if err := s.store.UpdateResults(taskID, statuses); err != nil {
+		slog.Error(
+			"Failed to update results in storage",
+			slog.Uint64("task_id", taskID),
+			slog.Any("err", err),
+		)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	resp := dto.CheckLinksResponse{
+		Links:    statuses,
+		LinksNum: taskID,
+	}
+
+	slog.Info(
+		"Batch processing completed",
+		slog.Uint64("task_id", taskID),
+		slog.Int("links_count", len(req.Links)),
+		slog.Int64("duration_ms", time.Since(start).Milliseconds()),
+	)
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// ReportLinksHandler читает список номеров задач и формирует PDF-отчет со статусами ссылок.
+//
+// Метод: POST /report
+// Тело: { "links_list": [1, 2] }
+// Ответ: PDF-файл (Content-Type: application/pdf)
+//
+// Правила:
+// - Размер JSON ограничен 1MB.
+// - Неизвестные поля в JSON запрещены.
+// - Если задача не найдена — 404.
+// - Пустой статус в storage трактуется как "not available".
+func (s *linksServer) ReportLinksHandler(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Защита от слишком больших JSON.
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+
+	var req dto.ReportRequest
+	if err := dec.Decode(&req); err != nil {
+		slog.Warn("Invalid request JSON", slog.Any("err", err))
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if len(req.LinksList) == 0 {
+		http.Error(w, "links_list must not be empty", http.StatusBadRequest)
+		return
+	}
+
+	slog.Info(
+		"Report generation started",
+		slog.Int("tasks_count", len(req.LinksList)),
+	)
+
+	linksStatus := make(map[string]string)
+
+	for _, taskID := range req.LinksList {
+		task, err := s.store.Get(taskID)
+		if err != nil {
+			if errors.Is(err, storage.ErrNotExist) {
+				http.Error(w, fmt.Sprintf("task %d not found", taskID), http.StatusNotFound)
+				return
+			}
+			slog.Error(
+				"Failed to get task from storage",
+				slog.Uint64("task_id", taskID),
+				slog.Any("err", err),
+			)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+
+		for url, status := range task.Results {
+			if status == "" {
+				status = "not available"
+			}
+			linksStatus[url] = status
+		}
+	}
+
+	pdfBytes, err := pdf.GenerateLinksStatusReport(linksStatus)
+	if err != nil {
+		slog.Error("Failed to generate PDF report", slog.Any("err", err))
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"report.pdf\"")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(pdfBytes)
+
+	slog.Info(
+		"Report generation completed",
+		slog.Int("tasks_count", len(req.LinksList)),
+		slog.Int("links_count", len(linksStatus)),
+		slog.Int64("duration_ms", time.Since(start).Milliseconds()),
+	)
+}
