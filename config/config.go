@@ -51,8 +51,7 @@ func InitConfig(pathConfig string) {
 
 // NewConfiguredHTTPServer создает http.Server из значений конфига.
 //
-// Важно: функция принимает mux и устанавливает его в поле Handler,
-// чтобы сервер использовал зарегистрированные роуты.
+// Важно: функция принимает mux и устанавливает его в поле Handler
 func NewConfiguredHTTPServer(mux *http.ServeMux) http.Server {
 	return http.Server{
 		Addr:         viper.GetString("server.Addr"),

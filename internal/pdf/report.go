@@ -58,7 +58,7 @@ func GenerateLinksStatusReport(linksStatus map[string]string) ([]byte, error) {
 
 		p.SetXY(x, y+hUsed)
 
-		// Простейшая защита от выхода за пределы страницы.
+		// Защита от выхода за пределы страницы.
 		if p.GetY() > 280 {
 			p.AddPage()
 		}

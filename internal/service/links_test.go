@@ -13,7 +13,6 @@ import (
 )
 
 func TestCheckLinks_OK(t *testing.T) {
-	// available: локальный сервер всегда отвечает 200
 	okSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -23,9 +22,9 @@ func TestCheckLinks_OK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse ok server url: %v", err)
 	}
-	okHostPort := u.Host // "127.0.0.1:12345" (без схемы)
+	okHostPort := u.Host // "127.0.0.1:12345"
 
-	// not available: домен в зоне .invalid (зарезервирована, не должна резолвиться)
+	// not available
 	bad := "nonexistent.invalid"
 
 	st := storage.NewStorage()
@@ -59,7 +58,7 @@ func TestCheckLinks_OK(t *testing.T) {
 		t.Fatalf("expected %q=not available, got %q", bad, resp.Links[bad])
 	}
 
-	// проверяем, что сохранилось в storage
+	// проверяка storage
 	task, err := st.Get(resp.LinksNum)
 	if err != nil {
 		t.Fatalf("storage.Get: %v", err)

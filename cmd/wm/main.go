@@ -26,13 +26,13 @@ import (
 	"wm/internal/storage"
 )
 
-// shuttingDown включает режим остановки: новые запросы отклоняются с 503.
-var shuttingDown atomic.Bool
+// shuttingDownFlag включает режим остановки: новые запросы отклоняются с 503.
+var shuttingDownFlag atomic.Bool
 
 // rejectWhenShuttingDown отклоняет запросы с 503, если начат graceful shutdown.
 func rejectWhenShuttingDown(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if shuttingDown.Load() {
+		if shuttingDownFlag.Load() {
 			http.Error(w, "HTTP server is shutting down", http.StatusServiceUnavailable)
 			return
 		}
@@ -104,8 +104,7 @@ func main() {
 		}
 	}
 
-	// 1) Переходим в режим “остановки”: новые запросы сразу отклоняем с 503.
-	shuttingDown.Store(true)
+	shuttingDownFlag.Store(true)
 
 	var pendingTasks uint64
 	store.GetAll(func(id uint64, _ storage.LinkStatus) bool {
@@ -123,7 +122,7 @@ func main() {
 		slog.String("signal", signalStr),
 	)
 
-	// 2) Перестаём принимать новые соединения и ждём завершения активных handler-ов.
+	// Перестаёт принимать новые соединения и ждёт завершения активных handler-ов.
 	shutdownTimeout := config.GetConfiguredShutdownTimeout()
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
@@ -135,7 +134,7 @@ func main() {
 		slog.Info("HTTP server stopped")
 	}
 
-	// 3) Сохраняем состояние на диск.
+	// Сохраняет состояние на диск.
 	if err := store.Dump(storagePath); err != nil {
 		slog.Error("Failed to dump storage state", slog.String("path", storagePath), slog.Any("err", err))
 	} else {

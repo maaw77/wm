@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// getStorageLinkStatus выполняет type assertion для доступа к внутренним полям хранилища.
+// getStorageLinkStatus выполняет type assertion.
 func getStorageLinkStatus(s Storage) *StorageLinkStatus {
 	return s.(*StorageLinkStatus)
 }
@@ -68,7 +68,7 @@ func TestAdd(t *testing.T) {
 				t.Errorf("Expected ID %d, got %d", tt.expectedID, id)
 			}
 
-			// Проверяем, что задача сохранилась
+			// Проверяет, что задача сохранилась
 			index := id - 1
 			if index >= uint64(len(storage.links)) {
 				t.Fatalf("Task index %d out of range (len=%d)", index, len(storage.links))
@@ -76,7 +76,6 @@ func TestAdd(t *testing.T) {
 
 			task := storage.links[index]
 
-			// Results должен быть инициализирован и содержать все URL с пустыми статусами.
 			if task.Results == nil {
 				t.Fatal("Expected non-nil Results map")
 			}
@@ -97,7 +96,7 @@ func TestAdd(t *testing.T) {
 		})
 	}
 
-	// Проверяем общее количество задач
+	// Проверяет общее количество задач
 	if len(storage.links) != successCount {
 		t.Errorf("Expected %d tasks, got %d", successCount, len(storage.links))
 	}

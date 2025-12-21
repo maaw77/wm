@@ -91,7 +91,7 @@ func (s *linksServer) CheckLinksHandler(w http.ResponseWriter, r *http.Request) 
 		linkStart := time.Now()
 
 		u := raw
-		// Если схема не указана, добавляем http:// чтобы net/http понял URL.
+		// Если схема не указана, добавляет http://.
 		if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
 			u = "http://" + u
 		}
@@ -124,7 +124,7 @@ func (s *linksServer) CheckLinksHandler(w http.ResponseWriter, r *http.Request) 
 		)
 	}
 
-	// Сохраняем результаты в in-memory storage.
+	// Сохраняет результаты в in-memory storage.
 	if err := s.store.UpdateResults(taskID, statuses); err != nil {
 		slog.Error(
 			"Failed to update results in storage",
@@ -192,8 +192,6 @@ func (s *linksServer) ReportLinksHandler(w http.ResponseWriter, r *http.Request)
 		slog.Int("tasks_count", len(req.LinksList)),
 	)
 
-	// Собираем сводный статус по всем task_id из запроса.
-	// Если URL повторяется в разных задачах, будет последний перезаписавший.
 	linksStatus := make(map[string]string)
 
 	for _, taskID := range req.LinksList {
@@ -213,8 +211,6 @@ func (s *linksServer) ReportLinksHandler(w http.ResponseWriter, r *http.Request)
 		}
 
 		for url, status := range task.Results {
-			// В storage могут быть пустые статусы сразу после Add().
-			// Для отчета трактуем пустое как "not available" (консервативно).
 			if status == "" {
 				status = "not available"
 			}
